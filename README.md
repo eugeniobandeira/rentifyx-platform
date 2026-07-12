@@ -55,6 +55,32 @@ This repository currently contains scaffolding and configuration templates. Most
    - `terraform validate`
 5. Use `.github/workflows/terraform.yml` for CI validation on pull requests.
 
+## Provisioning pipeline
+
+This repository is intended to follow a gated provisioning flow:
+
+1. Validate changes in a feature branch.
+2. Open a pull request that runs the GitHub workflow in `.github/workflows/terraform.yml`.
+3. Review the plan and security checks before merge.
+4. Merge only when the Terraform configuration is complete and the workflow passes.
+5. Provision resources from the `prod/` entrypoint using Terraform in a controlled environment.
+
+### Expected local provisioning steps
+
+1. Ensure `terraform.tfvars` is configured with the correct AWS region, state bucket, and lock table.
+2. Run `terraform init` in the root directory.
+3. Run `terraform plan -out=tfplan`.
+4. Inspect the plan output carefully.
+5. Run `terraform apply "tfplan"` only after the plan is approved.
+
+### CI validation flow
+
+- `terraform fmt -check`
+- `terraform init`
+- `terraform validate`
+- `tflint --module`
+- `checkov -d .`
+
 ## Recommended workflow
 
 - Keep `prod/` as the single environment entrypoint.
