@@ -23,5 +23,6 @@ resource "aws_eks_node_group" "kafka" {
     aws_iam_role_policy_attachment.kafka_node_worker_policy,
     aws_iam_role_policy_attachment.kafka_node_cni_policy,
     aws_iam_role_policy_attachment.kafka_node_ecr_read_policy,
+    aws_iam_role_policy_attachment.kafka_node_ebs_csi_policy,
   ]
 }
