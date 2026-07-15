@@ -1,18 +1,18 @@
-# Estado do Projeto
+# Project State
 
-## Decisões
+## Decisions
 
-- `prod` é o único ambiente inicial.
-- A infraestrutura de estado remoto usa S3 + DynamoDB e não é destruída no ciclo de teardown.
-- O projeto prioriza redução de custo em vez de alta disponibilidade total.
+- `prod` is the only initial environment.
+- Remote state infrastructure uses S3 + DynamoDB and is not destroyed during the teardown cycle.
+- The project prioritizes cost reduction over full high availability.
 
-## Bloqueadores
+## Blockers
 
-- **`prod/main.tf` está desconectado da raiz do repo.** Descoberto 2026-07-15 ao integrar `modules/kafka/`: `terraform init`/`validate` rodado na raiz não enxerga `prod/main.tf` (Terraform não desce em subdiretórios sozinho), e `prod/` não tem `providers.tf`/`backend.tf`/`versions.tf` próprios — então nada em `prod/main.tf` (todos os 6 módulos: network/eks/kafka/api-gateway/cognito/observability) é de fato aplicável hoje. Pré-existente, não introduzido pela feature Kafka — afeta todos os módulos igualmente. Precisa de uma correção estrutural (mover conteúdo de `prod/main.tf` pra um `main.tf` na raiz, ou fazer `prod/` ser seu próprio root module com cópia de provider/backend) antes de qualquer `terraform apply` real funcionar.
+- **`prod/main.tf` is disconnected from the repo root.** Discovered 2026-07-15 while wiring `modules/kafka/`: `terraform init`/`validate` run at the repo root never sees `prod/main.tf` (Terraform doesn't descend into subdirectories on its own), and `prod/` has no `providers.tf`/`backend.tf`/`versions.tf` of its own — so nothing in `prod/main.tf` (all 6 modules: network/eks/kafka/api-gateway/cognito/observability) is actually applicable today. Pre-existing, not introduced by the Kafka feature — affects all modules equally. Needs a structural fix (move `prod/main.tf`'s content into a root-level `main.tf`, or make `prod/` its own root module with its own copy of provider/backend config) before any real `terraform apply` will work.
 
-## Pendências
+## Pending
 
-- Criar `backend.tf` e configurar o backend remoto.
-- Definir módulos Terraform em `modules/`.
-- Implementar scripts de bootstrap e teardown.
-- Configurar GitHub Actions para validar Terraform.
+- Create `backend.tf` and configure the remote backend.
+- Define Terraform modules under `modules/`.
+- Implement bootstrap and teardown scripts.
+- Configure GitHub Actions to validate Terraform.
