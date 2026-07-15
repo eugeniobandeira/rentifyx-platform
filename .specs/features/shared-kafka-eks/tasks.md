@@ -1,7 +1,13 @@
 # Shared Kafka Cluster on EKS — Tasks
 
 **Design**: `.specs/features/shared-kafka-eks/design.md`
-**Status**: Draft
+**Status**: Done — T1-T10 all complete (2026-07-15). Terraform written and validated
+(`fmt`/`validate`), not yet applied to real AWS — awaiting user go-ahead. Note: T9's "real
+`terraform plan` against AWS creds" done-when criterion was intentionally skipped per user
+instruction (no live AWS actions without explicit confirmation) — `terraform validate` only.
+A pre-existing, out-of-scope gap was found and logged in `STATE.md` Blockers: `prod/main.tf` is
+disconnected from the repo root (no root `main.tf`, no provider/backend config under `prod/`) —
+affects all 6 modules, must be fixed before any real `apply` works, including this feature's.
 
 **Test/Gate convention for this repo** (no TESTING.md exists — this is Terraform IaC, not
 application code; derived from `.github/workflows/terraform.yml`, the only CI gate that exists):
