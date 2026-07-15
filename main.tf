@@ -1,5 +1,5 @@
 module "network" {
-  source = "../modules/network"
+  source = "./modules/network"
 
   project     = var.project
   environment = var.environment
@@ -7,7 +7,7 @@ module "network" {
 }
 
 module "eks" {
-  source = "../modules/eks"
+  source = "./modules/eks"
 
   project         = var.project
   environment     = var.environment
@@ -17,7 +17,7 @@ module "eks" {
 }
 
 module "kafka" {
-  source = "../modules/kafka"
+  source = "./modules/kafka"
 
   project         = var.project
   environment     = var.environment
@@ -28,7 +28,7 @@ module "kafka" {
 }
 
 module "api_gateway" {
-  source = "../modules/api-gateway"
+  source = "./modules/api-gateway"
 
   project     = var.project
   environment = var.environment
@@ -38,7 +38,7 @@ module "api_gateway" {
 }
 
 module "cognito" {
-  source = "../modules/cognito"
+  source = "./modules/cognito"
 
   project     = var.project
   environment = var.environment
@@ -46,7 +46,7 @@ module "cognito" {
 }
 
 module "observability" {
-  source = "../modules/observability"
+  source = "./modules/observability"
 
   project      = var.project
   environment  = var.environment

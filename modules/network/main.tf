@@ -9,11 +9,3 @@ resource "aws_vpc" "this" {
     Service     = "platform"
   }
 }
-
-output "vpc_id" {
-  value = aws_vpc.this.id
-}
-
-output "private_subnets" {
-  value = []
-}
