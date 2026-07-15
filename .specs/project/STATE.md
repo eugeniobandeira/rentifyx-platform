@@ -8,7 +8,7 @@
 
 ## Bloqueadores
 
-- Nenhum bloqueador inicial definido.
+- **`prod/main.tf` está desconectado da raiz do repo.** Descoberto 2026-07-15 ao integrar `modules/kafka/`: `terraform init`/`validate` rodado na raiz não enxerga `prod/main.tf` (Terraform não desce em subdiretórios sozinho), e `prod/` não tem `providers.tf`/`backend.tf`/`versions.tf` próprios — então nada em `prod/main.tf` (todos os 6 módulos: network/eks/kafka/api-gateway/cognito/observability) é de fato aplicável hoje. Pré-existente, não introduzido pela feature Kafka — afeta todos os módulos igualmente. Precisa de uma correção estrutural (mover conteúdo de `prod/main.tf` pra um `main.tf` na raiz, ou fazer `prod/` ser seu próprio root module com cópia de provider/backend) antes de qualquer `terraform apply` real funcionar.
 
 ## Pendências
 
