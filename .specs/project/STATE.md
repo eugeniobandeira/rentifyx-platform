@@ -19,7 +19,11 @@ structurally broken anymore.
 
 ## Pending
 
-- Create `backend.tf` and configure the remote backend.
-- Define Terraform modules under `modules/`.
-- Implement bootstrap and teardown scripts.
-- Configure GitHub Actions to validate Terraform.
+_All 4 items below turned out to already be done — this section had drifted; corrected 2026-07-16._
+
+- ~~Create `backend.tf` and configure the remote backend.~~ Done — `backend.tf` (S3 + DynamoDB, matches the Decisions above).
+- ~~Define Terraform modules under `modules/`.~~ Done — `modules/network`, `modules/eks`, `modules/kafka`, `modules/api-gateway`, `modules/cognito`, `modules/observability` all exist; `network`/`eks`/`kafka` are composed into the root `main.tf` (per the `prod/main.tf` fix above). `api-gateway`/`cognito`/`observability` exist as modules but composition into `main.tf` not yet confirmed — check before assuming they're wired in.
+- ~~Implement bootstrap and teardown scripts.~~ Done — `scripts/bootstrap.sh`, `scripts/teardown.sh` exist.
+- ~~Configure GitHub Actions to validate Terraform.~~ Done — `.github/workflows/terraform.yml` exists.
+
+**Still genuinely pending:** a real `terraform apply` against AWS has never been attempted (per Blockers above) — `terraform validate` passing is not the same as a working deploy. User is intentionally holding off on `apply` until `rentifyx-identity-api`'s `outbox-kafka-notifications` feature (in progress, T0-T6/15 done) and `rentifyx-communications-api`'s E-05 (API layer, in progress) both finish, so the whole cross-repo integration can be tested together rather than piecemeal.
