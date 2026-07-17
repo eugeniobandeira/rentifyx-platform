@@ -5,7 +5,7 @@ environment = "prod"
 # naming placeholders. state_bucket/dynamodb_table here are used for the
 # github_actions_oidc module's IAM policy scoping, not the backend itself
 # (backend.tf hardcodes these since backend blocks can't reference vars).
-state_bucket = "rentifyx-tfstate"
+state_bucket = "rentifyx-tfstate-166613156216"
 dynamodb_table = "rentifyx-tflock"
 github_repo = "eugeniobandeira/rentifyx-platform"
 create_github_oidc_provider = true
