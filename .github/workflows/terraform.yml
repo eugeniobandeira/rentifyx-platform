@@ -51,7 +51,7 @@ jobs:
       - name: TFLint
         run: |
           curl -sSL https://raw.githubusercontent.com/terraform-linters/tflint/master/install_linux.sh | bash
-          tflint --module
+          tflint --call-module-type=all
 
       - name: Checkov
         run: |
