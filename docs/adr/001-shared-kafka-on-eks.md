@@ -1,6 +1,6 @@
 # ADR-001: Self-hosted Kafka on a dedicated EC2 node group
 
-**Status**: Accepted (2026-07-15)
+**Status**: Superseded by [ADR-002](002-msk-serverless.md) (2026-07-17)
 **Related**: `.specs/features/shared-kafka-eks/spec.md`, `.specs/features/shared-kafka-eks/design.md`
 
 ## Context
