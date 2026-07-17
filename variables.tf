@@ -23,6 +23,24 @@ variable "dynamodb_table" {
   description = "DynamoDB table name for Terraform state locking."
 }
 
+variable "github_repo" {
+  type        = string
+  description = "GitHub repo (\"owner/repo\") allowed to assume the CI OIDC role."
+  default     = "eugeniobandeira/rentifyx-platform"
+}
+
+variable "create_github_oidc_provider" {
+  type        = bool
+  description = <<-EOT
+    Whether this repo's Terraform should create the shared
+    token.actions.githubusercontent.com OIDC provider. AWS allows only one
+    per account - if rentifyx-identity-api's own github-actions module was
+    applied first, set this to false so platform reuses the existing
+    provider instead of failing with EntityAlreadyExists.
+  EOT
+  default     = true
+}
+
 variable "kubeconfig_path" {
   type        = string
   description = "Path to kubeconfig for Kubernetes/Helm providers."

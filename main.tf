@@ -1,3 +1,14 @@
+module "github_actions_oidc" {
+  source = "./modules/github-actions-oidc"
+
+  prefix                  = "${var.project}-${var.environment}"
+  github_repo             = var.github_repo
+  create_oidc_provider    = var.create_github_oidc_provider
+  state_bucket            = var.state_bucket
+  state_bucket_key_prefix = "platform/"
+  dynamodb_lock_table     = var.dynamodb_table
+}
+
 module "network" {
   source = "./modules/network"
 
