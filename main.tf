@@ -20,11 +20,12 @@ module "network" {
 module "eks" {
   source = "./modules/eks"
 
-  project         = var.project
-  environment     = var.environment
-  aws_region      = var.aws_region
-  vpc_id          = module.network.vpc_id
-  private_subnets = module.network.private_subnets
+  project                 = var.project
+  environment             = var.environment
+  aws_region              = var.aws_region
+  vpc_id                  = module.network.vpc_id
+  private_subnets         = module.network.private_subnets
+  eks_public_access_cidrs = var.eks_public_access_cidrs
 }
 
 module "kafka" {

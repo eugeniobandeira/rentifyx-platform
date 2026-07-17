@@ -7,7 +7,8 @@ locals {
 resource "aws_ssm_parameter" "kafka_bootstrap_servers" {
   name        = "/rentifyx/platform/kafka/bootstrap-servers"
   description = "Internal Kafka bootstrap address for rentifyx-identity-api and rentifyx-communications-api"
-  type        = "String"
+  type        = "SecureString"
+  key_id      = "alias/aws/ssm"
   value       = local.kafka_bootstrap_servers
 
   depends_on = [kubernetes_manifest.kafka_cluster]
