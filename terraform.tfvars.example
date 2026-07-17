@@ -1,5 +1,11 @@
 aws_region = "sa-east-1"
 project = "RentifyX"
 environment = "prod"
-state_bucket = "rentifyx-platform-tfstate"
-dynamodb_table = "rentifyx-tf-locks"
+# Real values, verified against AWS 2026-07-17 (see backend.tf) - not just
+# naming placeholders. state_bucket/dynamodb_table here are used for the
+# github_actions_oidc module's IAM policy scoping, not the backend itself
+# (backend.tf hardcodes these since backend blocks can't reference vars).
+state_bucket = "rentifyx-tfstate-166613156216"
+dynamodb_table = "rentifyx-tflock"
+github_repo = "eugeniobandeira/rentifyx-platform"
+create_github_oidc_provider = true

@@ -9,10 +9,45 @@ This repo defines the platform-level infrastructure that should be shared across
 - Terraform remote state backend and safe environment setup
 - VPC with a shared NAT Gateway and private subnets
 - EKS cluster running on Fargate to avoid idle EC2 costs
+- A dedicated EC2 node group running a self-hosted Kafka cluster (KRaft mode, single broker) shared
+  by `rentifyx-identity-api` (producer) and `rentifyx-communications-api` (consumer) — see
+  `docs/adr/001-shared-kafka-on-eks.md`
 - Shared HTTP entry point via API Gateway + VPC Link + ALB
 - Cognito User Pool for centralized identity management
 - Observability skeleton using OpenTelemetry and CloudWatch
 - GitHub Actions validation for Terraform, tflint, and Checkov
+
+## Architecture
+
+```mermaid
+graph TD
+    subgraph VPC["Shared VPC (1 NAT Gateway)"]
+        subgraph EKS["EKS Cluster"]
+            Fargate["Fargate Profile<br/>(API Gateway backends, stateless workloads)"]
+            NodeGroup["Dedicated EC2 Node Group<br/>t4g.small, 1 node"]
+            Kafka["Kafka (Strimzi, KRaft, 1 broker)<br/>gp3 EBS volume"]
+            NodeGroup --> Kafka
+        end
+        ALB["Shared ALB / Ingress"]
+    end
+
+    APIGW["API Gateway (HTTP API)"] -->|VPC Link| ALB
+    ALB --> Fargate
+    Cognito["Cognito User Pool"] -.shared auth.-> APIGW
+    CW["CloudWatch<br/>(OTEL Collector)"] -.logs/metrics.- EKS
+
+    SSM["SSM Parameter Store<br/>/rentifyx/platform/*"]
+    Kafka -->|bootstrap address| SSM
+
+    IdentityAPI["rentifyx-identity-api<br/>(producer)"] -->|reads broker addr| SSM
+    CommsAPI["rentifyx-communications-api<br/>(consumer)"] -->|reads broker addr| SSM
+    IdentityAPI -->|NotificationRequested| Kafka
+    Kafka --> CommsAPI
+```
+
+Cross-repo config (like the Kafka broker address) is published to SSM Parameter Store rather than
+shared via `terraform_remote_state`, so no repo needs read access to another repo's Terraform
+state — see ADR-005 (referenced in `rentifyx-plan.md.md`).
 
 ## Why it exists
 
@@ -31,6 +66,7 @@ Key cost-focused decisions:
 - `modules/` — Terraform module skeletons:
   - `network/`
   - `eks/`
+  - `kafka/` — dedicated EC2 node group + Strimzi Kafka (KRaft, single broker) + SSM publish
   - `api-gateway/`
   - `cognito/`
   - `observability/`
@@ -54,6 +90,32 @@ This repository currently contains scaffolding and configuration templates. Most
    - `terraform init`
    - `terraform validate`
 5. Use `.github/workflows/terraform.yml` for CI validation on pull requests.
+
+## Provisioning pipeline
+
+This repository is intended to follow a gated provisioning flow:
+
+1. Validate changes in a feature branch.
+2. Open a pull request that runs the GitHub workflow in `.github/workflows/terraform.yml`.
+3. Review the plan and security checks before merge.
+4. Merge only when the Terraform configuration is complete and the workflow passes.
+5. Provision resources from the `prod/` entrypoint using Terraform in a controlled environment.
+
+### Expected local provisioning steps
+
+1. Ensure `terraform.tfvars` is configured with the correct AWS region, state bucket, and lock table.
+2. Run `terraform init` in the root directory.
+3. Run `terraform plan -out=tfplan`.
+4. Inspect the plan output carefully.
+5. Run `terraform apply "tfplan"` only after the plan is approved.
+
+### CI validation flow
+
+- `terraform fmt -check`
+- `terraform init`
+- `terraform validate`
+- `tflint --module`
+- `checkov -d .`
 
 ## Recommended workflow
 
