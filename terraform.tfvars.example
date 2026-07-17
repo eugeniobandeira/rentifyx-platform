@@ -9,7 +9,3 @@ state_bucket = "rentifyx-tfstate-166613156216"
 dynamodb_table = "rentifyx-tflock"
 github_repo = "eugeniobandeira/rentifyx-platform"
 create_github_oidc_provider = true
-# CHANGE ME: real IP(s)/office CIDR(s) allowed to reach the EKS public API
-# endpoint. Never leave as 0.0.0.0/0 - find your current IP with
-# `curl -s ifconfig.me` and use "<that-ip>/32".
-eks_public_access_cidrs = ["203.0.113.0/32"]

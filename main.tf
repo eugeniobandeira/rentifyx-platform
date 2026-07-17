@@ -17,16 +17,13 @@ module "network" {
   aws_region  = var.aws_region
 }
 
-module "eks" {
-  source = "./modules/eks"
-
-  project                 = var.project
-  environment             = var.environment
-  aws_region              = var.aws_region
-  vpc_id                  = module.network.vpc_id
-  private_subnets         = module.network.private_subnets
-  eks_public_access_cidrs = var.eks_public_access_cidrs
-}
+# EKS was removed 2026-07-17: nothing in this platform actually needs a
+# Kubernetes cluster. rentifyx-identity-api deploys via its own EC2 module
+# (not EKS), rentifyx-communications-api has no IaC yet, and Kafka now runs
+# on MSK Serverless (module.kafka) instead of Strimzi-on-EKS. If a real K8s
+# workload need shows up later, re-add a dedicated module rather than
+# reviving this one from git history - the old node-group/Strimzi/Helm
+# setup was scoped around Kafka specifically, not general-purpose.
 
 module "kafka" {
   source = "./modules/kafka"
@@ -34,7 +31,6 @@ module "kafka" {
   project         = var.project
   environment     = var.environment
   aws_region      = var.aws_region
-  cluster_name    = module.eks.cluster_name
   vpc_id          = module.network.vpc_id
   private_subnets = module.network.private_subnets
 }
@@ -60,8 +56,7 @@ module "cognito" {
 module "observability" {
   source = "./modules/observability"
 
-  project      = var.project
-  environment  = var.environment
-  aws_region   = var.aws_region
-  cluster_name = module.eks.cluster_name
+  project     = var.project
+  environment = var.environment
+  aws_region  = var.aws_region
 }

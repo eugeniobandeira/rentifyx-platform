@@ -41,18 +41,3 @@ variable "create_github_oidc_provider" {
   default     = true
 }
 
-variable "eks_public_access_cidrs" {
-  type        = list(string)
-  description = <<-EOT
-    CIDR blocks allowed to reach the EKS public API endpoint. Defaults to
-    loopback only (127.0.0.1/32) - deliberately non-functional. Override in
-    terraform.tfvars (gitignored) with your real IP(s). Never 0.0.0.0/0.
-  EOT
-  default     = ["127.0.0.1/32"]
-}
-
-variable "kubeconfig_path" {
-  type        = string
-  description = "Path to kubeconfig for Kubernetes/Helm providers."
-  default     = "~/.kube/config"
-}
