@@ -1,131 +1,140 @@
-# Rentifyx Platform
+# RentifyX Platform
 
-`rentifyx-platform` is the shared AWS infrastructure repository for the RentifyX ecosystem. Its goal is to provide a reusable, low-cost platform foundation that other RentifyX services can build on.
+[![Terraform](https://github.com/eugeniobandeira/rentifyx-platform/actions/workflows/terraform.yml/badge.svg)](https://github.com/eugeniobandeira/rentifyx-platform/actions/workflows/terraform.yml)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-## What this repository is for
+Shared AWS infrastructure for the RentifyX ecosystem — the network, messaging backbone, and
+cross-cutting services that no single microservice should own by itself.
 
-This repo defines the platform-level infrastructure that should be shared across services, including:
+## Why this repo exists
 
-- Terraform remote state backend and safe environment setup
-- VPC with a shared NAT Gateway and private subnets
-- EKS cluster running on Fargate to avoid idle EC2 costs
-- A dedicated EC2 node group running a self-hosted Kafka cluster (KRaft mode, single broker) shared
-  by `rentifyx-identity-api` (producer) and `rentifyx-communications-api` (consumer) — see
-  `docs/adr/001-shared-kafka-on-eks.md`
-- Shared HTTP entry point via API Gateway + VPC Link + ALB
-- Cognito User Pool for centralized identity management
-- Observability skeleton using OpenTelemetry and CloudWatch
-- GitHub Actions validation for Terraform, tflint, and Checkov
+Each RentifyX service ([`identity-api`](https://github.com/eugeniobandeira/rentifyx-identity-api),
+[`communications-api`](https://github.com/eugeniobandeira/rentifyx-communications-api)) owns its
+*own* infrastructure — its own EC2 instance, its own DynamoDB table, its own IAM role. But some
+things genuinely belong to neither: the VPC both services' EC2 instances sit in, and the Kafka
+broker that lets `identity-api` publish `NotificationRequested` events for
+`communications-api` to consume without knowing anything about how the other one is deployed.
+That's this repo's entire job — nothing here should be duplicated in a service repo, and nothing
+service-specific should end up here.
+
+The project also deliberately prioritizes **cost over high availability**: single environment
+(`prod`), one shared NAT Gateway instead of one per AZ, managed serverless services over
+self-hosted ones wherever the trade-off is close. See [Decisions](#decisions) below for where that
+philosophy was tested and, in one case, reversed.
 
 ## Architecture
 
 ```mermaid
-graph TD
-    subgraph VPC["Shared VPC (1 NAT Gateway)"]
-        subgraph EKS["EKS Cluster"]
-            Fargate["Fargate Profile<br/>(API Gateway backends, stateless workloads)"]
-            NodeGroup["Dedicated EC2 Node Group<br/>t4g.small, 1 node"]
-            Kafka["Kafka (Strimzi, KRaft, 1 broker)<br/>gp3 EBS volume"]
-            NodeGroup --> Kafka
-        end
-        ALB["Shared ALB / Ingress"]
+flowchart TB
+    subgraph GH["GitHub Actions"]
+        CI["terraform.yml CI"]
     end
 
-    APIGW["API Gateway (HTTP API)"] -->|VPC Link| ALB
-    ALB --> Fargate
-    Cognito["Cognito User Pool"] -.shared auth.-> APIGW
-    CW["CloudWatch<br/>(OTEL Collector)"] -.logs/metrics.- EKS
+    subgraph AWS["AWS Account 166613156216 (sa-east-1 app resources, us-east-1 state)"]
+        subgraph VPC["module.network — shared VPC"]
+            Pub["2 public subnets"]
+            Priv["2 private subnets"]
+            NAT["1 shared NAT Gateway"]
+            FlowLogs["VPC Flow Logs → CloudWatch (KMS-encrypted)"]
+        end
 
-    SSM["SSM Parameter Store<br/>/rentifyx/platform/*"]
-    Kafka -->|bootstrap address| SSM
+        MSK["module.kafka —<br/>MSK Serverless<br/>(SASL/IAM auth)"]
+        OIDC["module.github_actions_oidc —<br/>shared OIDC provider<br/>+ CI role"]
+        Cognito["module.cognito"]
+        APIGW["module.api_gateway"]
+        Obs["module.observability —<br/>CloudWatch log group"]
 
-    IdentityAPI["rentifyx-identity-api<br/>(producer)"] -->|reads broker addr| SSM
-    CommsAPI["rentifyx-communications-api<br/>(consumer)"] -->|reads broker addr| SSM
-    IdentityAPI -->|NotificationRequested| Kafka
-    Kafka --> CommsAPI
+        VPC --> MSK
+    end
+
+    IdentityAPI["rentifyx-identity-api<br/>(own EC2, own IAM role)"]
+    CommsAPI["rentifyx-communications-api<br/>(own EC2, own IAM role)"]
+
+    IdentityAPI -->|"publishes<br/>NotificationRequested"| MSK
+    MSK -->|"consumes"| CommsAPI
+    IdentityAPI -.->|"terraform_remote_state<br/>reads client_iam_policy_json"| MSK
+    CommsAPI -.->|"terraform_remote_state<br/>reads client_iam_policy_json"| MSK
+    CI -->|"assumes"| OIDC
 ```
 
-Cross-repo config (like the Kafka broker address) is published to SSM Parameter Store rather than
-shared via `terraform_remote_state`, so no repo needs read access to another repo's Terraform
-state — see ADR-005 (referenced in `rentifyx-plan.md.md`).
+`module.kafka` exposes `client_iam_policy_json`/`cluster_arn`/`ssm_parameter_path` at root
+(`outputs.tf`) precisely so the two service repos can consume them via `terraform_remote_state`
+without this repo ever needing to know their IAM role names.
 
-## Why it exists
+## Decisions
 
-The intention is to minimize ongoing AWS costs while still using managed services. This repository targets a single production environment and defers expensive or complex items until a later phase.
+Full ADRs: [`docs/adr/`](docs/adr/).
 
-Key cost-focused decisions:
-
-- Single environment only (`prod`)
-- One shared NAT Gateway instead of one per AZ
-- EKS on Fargate rather than EC2 node groups
-- Shared ALB/Ingress instead of one per microservice
-- CloudWatch free-tier observability instead of a paid service
+- **[ADR-001](docs/adr/001-shared-kafka-on-eks.md)** (superseded) — the original design ran Kafka
+  self-hosted (Strimzi, KRaft, single broker) on a dedicated EC2 node group inside an EKS cluster,
+  chosen specifically to *learn* real Kafka operations rather than take the cheapest path.
+- **[ADR-002](docs/adr/002-msk-serverless.md)** — reversed that decision. Not purely on cost (MSK
+  Serverless isn't obviously cheaper) but because EKS turned out to be dead weight: nothing else in
+  this platform needs a Kubernetes cluster (`identity-api` deploys via its own EC2 module, not EKS
+  pods), and the EKS-based design had an unavoidable apply-ordering chicken-egg (Kafka's Kubernetes
+  resources needed a cluster that didn't exist yet in the same `apply`). MSK Serverless with
+  SASL/IAM auth removes both problems. The trade-off is real and stated plainly in the ADR: less
+  hands-on Kafka-operations learning, which was the original point.
 
 ## Repository structure
 
-- `modules/` — Terraform module skeletons:
-  - `network/`
-  - `eks/`
-  - `kafka/` — dedicated EC2 node group + Strimzi Kafka (KRaft, single broker) + SSM publish
-  - `api-gateway/`
-  - `cognito/`
-  - `observability/`
-- `prod/` — environment-specific Terraform entrypoint
-- `scripts/` — support scripts for bootstrap and teardown
-- `docs/adr/` — architectural decision records
-- `.specs/project/` — project vision, roadmap, and state tracking
-- `.github/` — GitHub Actions workflow and PR template
+```
+modules/
+  network/              — VPC, subnets, NAT Gateway, flow logs, default SG lockdown
+  kafka/                — MSK Serverless cluster, security group, client IAM policy
+  github-actions-oidc/  — shared GitHub Actions OIDC provider + CI role
+  api-gateway/           — HTTP API Gateway (not yet wired to a backend)
+  cognito/               — Cognito User Pool (not yet consumed by either service)
+  observability/         — CloudWatch log group for OTel export
+docs/
+  adr/                  — architectural decision records
+.specs/project/         — vision, roadmap, state tracking (source of truth for progress)
+.github/workflows/
+  terraform.yml         — fmt/init/validate/tflint/checkov on every PR + push to main
+```
 
 ## Current status
 
-This repository currently contains scaffolding and configuration templates. Most modules are skeletons and must be completed before provisioning any AWS infrastructure.
+`terraform validate`/`plan` succeed end-to-end. `terraform apply` has **not** been run for the
+bulk of this repo (`network`/`kafka`/`api-gateway`/`cognito`/`observability`) — real, billable AWS
+resources (NAT Gateway, MSK Serverless), applied only with explicit confirmation. The one thing
+actually applied for real: `module.github_actions_oidc` (the CI role both this repo's own workflow
+and eventually the service repos' deploy workflows assume).
+
+See [`.specs/project/STATE.md`](.specs/project/STATE.md) for the up-to-date, detailed state —
+this README describes what the system *is*, STATE.md tracks what's actually been *done*.
 
 ## Getting started
 
-1. Copy `terraform.tfvars.example` to `terraform.tfvars` and update values.
-2. Review `backend.tf` and configure the S3/DynamoDB backend for remote state.
-3. Complete the Terraform module implementations in `modules/`.
-4. Validate the repository with:
-   - `terraform fmt -check`
-   - `terraform init`
-   - `terraform validate`
-5. Use `.github/workflows/terraform.yml` for CI validation on pull requests.
+```bash
+cp terraform.tfvars.example terraform.tfvars   # fill in real values
+terraform init \
+  -backend-config="bucket=rentifyx-tfstate-166613156216" \
+  -backend-config="key=platform/terraform.tfstate" \
+  -backend-config="region=us-east-1" \
+  -backend-config="dynamodb_table=rentifyx-tflock"
+terraform plan
+```
 
-## Provisioning pipeline
+Apply in stages, not all at once — `module.kafka` needs `module.network`'s outputs:
 
-This repository is intended to follow a gated provisioning flow:
+```bash
+terraform apply -target=module.network
+terraform apply -target=module.kafka
+terraform apply   # the rest (api-gateway, cognito, observability)
+```
 
-1. Validate changes in a feature branch.
-2. Open a pull request that runs the GitHub workflow in `.github/workflows/terraform.yml`.
-3. Review the plan and security checks before merge.
-4. Merge only when the Terraform configuration is complete and the workflow passes.
-5. Provision resources from the `prod/` entrypoint using Terraform in a controlled environment.
+## CI
 
-### Expected local provisioning steps
+`.github/workflows/terraform.yml` runs on every push to `main` and every PR:
 
-1. Ensure `terraform.tfvars` is configured with the correct AWS region, state bucket, and lock table.
-2. Run `terraform init` in the root directory.
-3. Run `terraform plan -out=tfplan`.
-4. Inspect the plan output carefully.
-5. Run `terraform apply "tfplan"` only after the plan is approved.
+```
+terraform fmt -check → terraform init → terraform validate → tflint --call-module-type=all → checkov -d .
+```
 
-### CI validation flow
+Authenticates via the OIDC role above (`AWS_DEPLOY_ROLE_ARN` repo secret) — no long-lived AWS
+credentials stored in GitHub.
 
-- `terraform fmt -check`
-- `terraform init`
-- `terraform validate`
-- `tflint --module`
-- `checkov -d .`
+## License
 
-## Recommended workflow
-
-- Keep `prod/` as the single environment entrypoint.
-- Do not create a staging environment yet.
-- Do not provision resources until all module logic is implemented.
-- Use PR reviews to verify Terraform changes and cost guardrails.
-
-## Notes
-
-- `pull_request.md` is a repository helper, but GitHub uses `.github/PULL_REQUEST_TEMPLATE.md` automatically.
-- The current state is intentionally conservative: only scaffolding and governance should exist now.
-- The repository should be updated as each platform module is implemented, not by provisioning incomplete infrastructure.
+MIT © eugeniobandeira
