@@ -33,6 +33,13 @@ module "kafka" {
   aws_region      = var.aws_region
   vpc_id          = module.network.vpc_id
   private_subnets = module.network.private_subnets
+  vpc_cidr        = module.network.vpc_cidr
+}
+
+module "kafka_topics" {
+  source = "./modules/kafka-topics"
+
+  depends_on = [module.kafka]
 }
 
 module "api_gateway" {

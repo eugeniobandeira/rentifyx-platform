@@ -124,6 +124,20 @@ terraform apply -target=module.kafka
 terraform apply   # the rest (api-gateway, cognito, observability)
 ```
 
+### Tearing down
+
+`rentifyx-identity-api` and `rentifyx-communications-api` read this repo's outputs via
+`terraform_remote_state` (Kafka client policy, shared SES identity) — destroy those two repos'
+resources **first**, then this repo, so nothing is left pointing at a destroyed dependency:
+
+```bash
+terraform destroy
+```
+
+Real, billable resources this creates (NAT Gateway, MSK Serverless, SES identity) all get torn
+down. The Terraform state backend (S3 bucket / DynamoDB lock table) is not managed by this repo's
+`terraform destroy` and is left alone.
+
 ## CI
 
 `.github/workflows/terraform.yml` runs on every push to `main` and every PR:

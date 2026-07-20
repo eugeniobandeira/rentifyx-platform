@@ -22,3 +22,16 @@ output "ses_identity_arn" {
   value       = module.ses.identity_arn
   description = "ARN of the shared SES email identity."
 }
+
+# Consumed by rentifyx-identity-api/rentifyx-communications-api via
+# terraform_remote_state - their EC2 instances need to live in this VPC to
+# reach the MSK Serverless cluster (its DNS/network is VPC-internal only).
+output "vpc_id" {
+  value       = module.network.vpc_id
+  description = "VPC ID - app repos' EC2 instances must be provisioned here to reach MSK."
+}
+
+output "public_subnets" {
+  value       = module.network.public_subnets
+  description = "Public subnet IDs - app repos' EC2 instances go here (internet-facing, same VPC as MSK)."
+}
