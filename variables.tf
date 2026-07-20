@@ -41,3 +41,8 @@ variable "create_github_oidc_provider" {
   default     = true
 }
 
+variable "ses_identity" {
+  type        = string
+  description = "Email address or domain to verify in SES - shared by rentifyx-identity-api and rentifyx-communications-api."
+}
+

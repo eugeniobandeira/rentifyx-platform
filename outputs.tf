@@ -14,3 +14,11 @@ output "kafka_cluster_arn" {
 output "kafka_ssm_parameter_path" {
   value = module.kafka.ssm_parameter_path
 }
+
+# Consumed by rentifyx-identity-api/rentifyx-communications-api via
+# terraform_remote_state - one shared SES sender identity instead of each
+# app repo owning its own colliding aws_sesv2_email_identity.
+output "ses_identity_arn" {
+  value       = module.ses.identity_arn
+  description = "ARN of the shared SES email identity."
+}

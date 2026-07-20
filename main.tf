@@ -53,6 +53,12 @@ module "cognito" {
   aws_region  = var.aws_region
 }
 
+module "ses" {
+  source = "./modules/ses"
+
+  ses_identity = var.ses_identity
+}
+
 module "observability" {
   source = "./modules/observability"
 
