@@ -1,11 +1,13 @@
 # Self-Hosted Kafka (replace AWS MSK Serverless) Tasks
 
 **Design**: `.specs/features/self-hosted-kafka/design.md`
-**Status**: In Progress
+**Status**: Done (T1-T13 complete 2026-07-21; not yet applied against real AWS or PR'd)
 
 ---
 
 ## Execution Plan
+
+**Phase 1 (T1-T5): DONE** — commit `313cbea` on branch `feat/self-hosted-kafka`. `terraform validate` passed; `terraform plan -target=module.kafka` confirmed 11 resources to create (network + kafka broker EC2/SG/IAM/SSM), 0 destroy, 0 unexpected changes.
 
 ### Phase 1: Platform infra (mostly sequential — same module's files)
 
