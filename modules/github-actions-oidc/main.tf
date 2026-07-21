@@ -5,7 +5,7 @@
 #
 # Scope note: this role currently grants only what CI's terraform.yml needs
 # today (init/validate against the S3+DynamoDB backend). It does NOT grant
-# permission to create/modify the actual infrastructure (VPC, EKS, Kafka,
+# permission to create/modify the actual infrastructure (VPC, Kafka broker,
 # etc.) - that's deliberately out of scope until a real `apply` workflow
 # exists and its exact permission needs are known, rather than guessing a
 # broad policy upfront.

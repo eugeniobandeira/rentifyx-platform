@@ -136,7 +136,7 @@ resources **first**, then this repo, so nothing is left pointing at a destroyed 
 terraform destroy
 ```
 
-Real, billable resources this creates (NAT Gateway, MSK Serverless, SES identity) all get torn
+Real, billable resources this creates (NAT Gateway, Kafka broker EC2, SES identity) all get torn
 down. The Terraform state backend (S3 bucket / DynamoDB lock table) is not managed by this repo's
 `terraform destroy` and is left alone.
 
