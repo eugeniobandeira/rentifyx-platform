@@ -39,6 +39,24 @@ resource "aws_vpc_security_group_ingress_rule" "msk_sasl_iam" {
   ip_protocol                  = "tcp"
 }
 
+# rentifyx-identity-api/rentifyx-communications-api's EC2 instances live in
+# this same VPC (their own Terraform state, provisioned via terraform_remote_state
+# reads of this repo's vpc_id/public_subnets) but their security groups can't
+# be referenced here directly - they don't exist in this repo's state. VPC-CIDR
+# scoping keeps the intent ("cluster-internal only", never internet-exposed)
+# without a cross-repo SG reference, which would create a circular
+# apply-ordering dependency. Confirmed with user before widening from
+# self-reference-only.
+resource "aws_vpc_security_group_ingress_rule" "msk_sasl_iam_vpc" {
+  security_group_id = aws_security_group.msk.id
+  description       = "SASL/IAM broker port, any client within this VPC"
+
+  cidr_ipv4   = var.vpc_cidr
+  from_port   = 9098
+  to_port     = 9098
+  ip_protocol = "tcp"
+}
+
 resource "aws_vpc_security_group_egress_rule" "msk_all" {
   security_group_id = aws_security_group.msk.id
   description       = "Allow all outbound (broker-to-broker, AWS API calls)"
