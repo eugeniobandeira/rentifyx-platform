@@ -20,7 +20,9 @@ module "network" {
 # EKS was removed 2026-07-17: nothing in this platform actually needs a
 # Kubernetes cluster. rentifyx-identity-api deploys via its own EC2 module
 # (not EKS), rentifyx-communications-api has no IaC yet, and Kafka now runs
-# on MSK Serverless (module.kafka) instead of Strimzi-on-EKS. If a real K8s
+# self-hosted (module.kafka - single EC2, KRaft, see
+# .specs/features/self-hosted-kafka/) instead of Strimzi-on-EKS or MSK
+# Serverless (both tried and replaced, in that order). If a real K8s
 # workload need shows up later, re-add a dedicated module rather than
 # reviving this one from git history - the old node-group/Strimzi/Helm
 # setup was scoped around Kafka specifically, not general-purpose.
