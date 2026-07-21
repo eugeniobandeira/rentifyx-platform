@@ -1,10 +1,11 @@
 #!/bin/bash
-# Starts (or restarts) a kafbat-ui container on this host, authenticated to
-# the real MSK Serverless cluster via SASL/IAM using this host's own IAM
-# role (EC2 instance role via IMDS - no static credentials).
+# Starts (or restarts) a kafbat-ui container on this host, connecting to the
+# self-hosted Kafka broker (PLAINTEXT, no auth - see
+# ../.specs/features/self-hosted-kafka/ for why MSK Serverless was replaced).
 #
-# Must run on an EC2 instance inside rentifyx-platform's VPC (identity-api's
-# or communications-api's) - MSK Serverless's broker DNS is VPC-private only.
+# Must run on an EC2 instance inside rentifyx-platform's VPC (identity-api's,
+# communications-api's, or the Kafka broker instance itself) - the broker's
+# private IP is only reachable from within the VPC.
 # See ../.specs/features/kafka-ui-access/ for the full spec/design and
 # ../docs/kafka-ui.md for the SSH-tunnel access instructions.
 
@@ -14,7 +15,7 @@ AWS_REGION="${AWS_REGION:-sa-east-1}"
 BOOTSTRAP_SERVERS_SSM_PATH="/rentifyx/platform/kafka/bootstrap-servers"
 KAFKA_UI_PORT="${KAFKA_UI_PORT:-8081}"
 
-echo "Resolving MSK bootstrap servers from SSM (${BOOTSTRAP_SERVERS_SSM_PATH})..."
+echo "Resolving Kafka bootstrap servers from SSM (${BOOTSTRAP_SERVERS_SSM_PATH})..."
 BOOTSTRAP_SERVERS=$(aws ssm get-parameter \
   --name "$BOOTSTRAP_SERVERS_SSM_PATH" \
   --with-decryption \
@@ -32,10 +33,7 @@ docker run -d \
   -p "${KAFKA_UI_PORT}:8080" \
   -e KAFKA_CLUSTERS_0_NAME=rentifyx \
   -e KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS="$BOOTSTRAP_SERVERS" \
-  -e KAFKA_CLUSTERS_0_PROPERTIES_SECURITY_PROTOCOL=SASL_SSL \
-  -e KAFKA_CLUSTERS_0_PROPERTIES_SASL_MECHANISM=AWS_MSK_IAM \
-  -e KAFKA_CLUSTERS_0_PROPERTIES_SASL_CLIENT_CALLBACK_HANDLER_CLASS=software.amazon.msk.auth.iam.IAMClientCallbackHandler \
-  -e 'KAFKA_CLUSTERS_0_PROPERTIES_SASL_JAAS_CONFIG=software.amazon.msk.auth.iam.IAMLoginModule required;' \
+  -e KAFKA_CLUSTERS_0_PROPERTIES_SECURITY_PROTOCOL=PLAINTEXT \
   ghcr.io/kafbat/kafka-ui:latest
 
 echo "kafka-ui started. Open an SSH tunnel from your local machine:"

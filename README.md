@@ -38,7 +38,7 @@ flowchart TB
             FlowLogs["VPC Flow Logs → CloudWatch (KMS-encrypted)"]
         end
 
-        MSK["module.kafka —<br/>MSK Serverless<br/>(SASL/IAM auth)"]
+        MSK["module.kafka —<br/>self-hosted KRaft broker<br/>(EC2, PLAINTEXT)"]
         OIDC["module.github_actions_oidc —<br/>shared OIDC provider<br/>+ CI role"]
         Cognito["module.cognito"]
         APIGW["module.api_gateway"]
@@ -52,14 +52,16 @@ flowchart TB
 
     IdentityAPI -->|"publishes<br/>NotificationRequested"| MSK
     MSK -->|"consumes"| CommsAPI
-    IdentityAPI -.->|"terraform_remote_state<br/>reads client_iam_policy_json"| MSK
-    CommsAPI -.->|"terraform_remote_state<br/>reads client_iam_policy_json"| MSK
+    IdentityAPI -.->|"terraform_remote_state<br/>reads kafka_ssm_parameter_path"| MSK
+    CommsAPI -.->|"terraform_remote_state<br/>reads kafka_ssm_parameter_path"| MSK
     CI -->|"assumes"| OIDC
 ```
 
-`module.kafka` exposes `client_iam_policy_json`/`cluster_arn`/`ssm_parameter_path` at root
-(`outputs.tf`) precisely so the two service repos can consume them via `terraform_remote_state`
-without this repo ever needing to know their IAM role names.
+`module.kafka` exposes `ssm_parameter_path` at root (`outputs.tf`) so the two service repos can
+resolve the broker's bootstrap address via `terraform_remote_state` without this repo ever
+needing to know their IAM role names. See
+[`.specs/features/self-hosted-kafka/`](.specs/features/self-hosted-kafka/) for why MSK
+Serverless (SASL/IAM) was replaced with a self-hosted broker (PLAINTEXT) on 2026-07-21 — cost.
 
 ## Decisions
 
@@ -81,7 +83,7 @@ Full ADRs: [`docs/adr/`](docs/adr/).
 ```
 modules/
   network/              — VPC, subnets, NAT Gateway, flow logs, default SG lockdown
-  kafka/                — MSK Serverless cluster, security group, client IAM policy
+  kafka/                — self-hosted Kafka broker (EC2, KRaft), security group, SSM parameter
   github-actions-oidc/  — shared GitHub Actions OIDC provider + CI role
   api-gateway/           — HTTP API Gateway (not yet wired to a backend)
   cognito/               — Cognito User Pool (not yet consumed by either service)
@@ -97,7 +99,7 @@ docs/
 
 `terraform validate`/`plan` succeed end-to-end. `terraform apply` has **not** been run for the
 bulk of this repo (`network`/`kafka`/`api-gateway`/`cognito`/`observability`) — real, billable AWS
-resources (NAT Gateway, MSK Serverless), applied only with explicit confirmation. The one thing
+resources (NAT Gateway, Kafka broker EC2), applied only with explicit confirmation. The one thing
 actually applied for real: `module.github_actions_oidc` (the CI role both this repo's own workflow
 and eventually the service repos' deploy workflows assume).
 

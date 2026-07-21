@@ -30,7 +30,6 @@ module "kafka" {
 
   project         = var.project
   environment     = var.environment
-  aws_region      = var.aws_region
   vpc_id          = module.network.vpc_id
   private_subnets = module.network.private_subnets
   vpc_cidr        = module.network.vpc_cidr
