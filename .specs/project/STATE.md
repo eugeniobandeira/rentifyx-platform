@@ -2,6 +2,10 @@
 
 ## Last Updated
 
+2026-07-21
+
+**2026-07-21: MSK Serverless replaced with self-hosted Kafka (KRaft, single broker, PLAINTEXT) on a new dedicated EC2 in `module.kafka`.** Driven purely by cost — MSK Serverless bills per cluster-hour + per partition-hour + storage, expensive for a study project only spun up occasionally for testing. Full spec/design/tasks: `.specs/features/self-hosted-kafka/` (branch `feat/self-hosted-kafka`, commit `313cbea`). Broker runs `apache/kafka`'s official image in KRaft combined mode (broker+controller, no Zookeeper) on a `t3.micro`, private subnet, security group scoped to the VPC CIDR on port 9092. Same module name/outputs consumed by both app repos via `terraform_remote_state` — only `kafka_ssm_parameter_path`'s value shape changed (plain `host:port` instead of a SASL/IAM bootstrap string); `kafka_client_iam_policy_json`/`kafka_cluster_arn` outputs removed (nothing to grant IAM access to anymore). `terraform validate`/`plan -target=module.kafka` confirmed clean (11 resources to create, 0 destroy, 0 unexpected). Accepted trade-offs, not bugs: single broker (no replication — if the instance dies, Kafka dies with it), no persistent EBS-backed log dir (topics/messages lost on instance replacement), PLAINTEXT only (security group is the entire trust boundary). Both app repos' `KafkaProducerFactory`/`KafkaConsumerFactory` simplified to match (SASL/IAM code removed, `AWS.MSK.Auth` package dropped) — see their own STATE.md entries. Not yet applied against real AWS or tested end-to-end; not yet PR'd (pending a live test pass, same pattern as previous infra work this session).
+
 2026-07-20
 
 ## Decisions

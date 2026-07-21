@@ -1,9 +1,10 @@
 # Kafka UI Access
 
-MSK Serverless has no topic/message/consumer-group visibility in the AWS Console at all
-("Topic management requires Amazon MSK Provisioned... Serverless clusters are currently
-not supported"). This runs [kafbat-ui](https://github.com/kafbat/kafka-ui) — a real web UI —
-as a container on one of the app repos' EC2 instances, reached over an SSH tunnel.
+The self-hosted Kafka broker (see [`.specs/features/self-hosted-kafka/`](../.specs/features/self-hosted-kafka/)
+— replaced AWS MSK Serverless 2026-07-21 to cut infra cost) has no built-in web UI. This runs
+[kafbat-ui](https://github.com/kafbat/kafka-ui) — a real web UI — as a container on any EC2
+instance in the same VPC (the broker's own instance, or either app repo's), reached over an
+SSH tunnel.
 
 Full spec/design: [`.specs/features/kafka-ui-access/`](../.specs/features/kafka-ui-access/).
 

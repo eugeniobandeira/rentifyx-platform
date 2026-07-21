@@ -1,25 +1,25 @@
 # ---------------------------------------------------------------------------
-# Amazon MSK Serverless - replaces the previous Strimzi-on-EKS setup
-# (helm.tf/kafka-cluster.tf/storage.tf/iam.tf/security.tf/topics.tf,
-# removed 2026-07-17). Fully managed: no node group, no Kubernetes operator,
-# no EBS storage class to maintain. Chosen specifically to let
-# rentifyx-identity-api/rentifyx-communications-api get real, shared Kafka
-# without this repo's EKS module (which nothing else in this platform
-# actually needs - identity-api deploys via its own EC2 module, not EKS).
+# Self-hosted Kafka (KRaft mode, single broker) - replaces AWS MSK Serverless
+# (removed 2026-07-21). MSK Serverless billed per cluster-hour + per
+# partition-hour + storage, which was expensive to keep running for a study
+# project only spun up occasionally to test/demo the notification flow. A
+# single EC2 instance running apache/kafka's official Docker image in KRaft
+# combined mode (broker + controller in one process, no Zookeeper) costs a
+# fraction of that and is sufficient for this project's scale/reliability
+# needs. See .specs/features/self-hosted-kafka/ for the full spec/design.
 #
-# Topics are NOT declared here: MSK Serverless doesn't support declarative
-# topic management via the AWS provider (no aws_msk_topic resource exists),
-# and auto.create.topics.enable is always on for Serverless clusters and
-# can't be disabled - topics get created automatically the first time a
-# producer writes to them. See rentifyx-communications-api's
-# RetryTopicChain constants for the exact topic names this platform's
-# producers/consumers expect.
+# Trade-offs accepted (documented, not bugs): single broker, no replication -
+# if this instance dies, Kafka dies with it; no persistent EBS-backed log
+# dir - topics/messages are lost on instance replacement (acceptable since
+# infra is destroyed/recreated per test session anyway); PLAINTEXT only, no
+# SASL/TLS - the security group (VPC-CIDR-scoped) is the entire trust
+# boundary, matching the project's existing "no public broker exposure"
+# posture.
 # ---------------------------------------------------------------------------
 
-resource "aws_security_group" "msk" {
-  #checkov:skip=CKV2_AWS_5:actually attached, via aws_msk_serverless_cluster.this's vpc_config.security_group_ids below - checkov's static graph analysis doesn't associate that block with this SG
-  name        = "${var.project}-${var.environment}-kafka-msk"
-  description = "MSK Serverless SASL/IAM broker access, VPC-internal only"
+resource "aws_security_group" "kafka" {
+  name        = "${var.project}-${var.environment}-kafka-broker"
+  description = "Self-hosted Kafka broker, PLAINTEXT, VPC-internal only"
   vpc_id      = var.vpc_id
 
   tags = {
@@ -29,109 +29,99 @@ resource "aws_security_group" "msk" {
   }
 }
 
-resource "aws_vpc_security_group_ingress_rule" "msk_sasl_iam" {
-  security_group_id = aws_security_group.msk.id
-  description       = "SASL/IAM broker port, cluster-internal only"
-
-  referenced_security_group_id = aws_security_group.msk.id
-  from_port                    = 9098
-  to_port                      = 9098
-  ip_protocol                  = "tcp"
-}
-
-# rentifyx-identity-api/rentifyx-communications-api's EC2 instances live in
-# this same VPC (their own Terraform state, provisioned via terraform_remote_state
-# reads of this repo's vpc_id/public_subnets) but their security groups can't
-# be referenced here directly - they don't exist in this repo's state. VPC-CIDR
-# scoping keeps the intent ("cluster-internal only", never internet-exposed)
-# without a cross-repo SG reference, which would create a circular
-# apply-ordering dependency. Confirmed with user before widening from
-# self-reference-only.
-resource "aws_vpc_security_group_ingress_rule" "msk_sasl_iam_vpc" {
-  security_group_id = aws_security_group.msk.id
-  description       = "SASL/IAM broker port, any client within this VPC"
+# Same VPC-CIDR-scoping rationale as the previous MSK security group: rentifyx-identity-api/
+# rentifyx-communications-api's EC2 instances live in this same VPC (their own Terraform state)
+# but their security groups can't be referenced here directly without a circular cross-repo
+# apply-ordering dependency.
+resource "aws_vpc_security_group_ingress_rule" "kafka_broker_vpc" {
+  security_group_id = aws_security_group.kafka.id
+  description       = "Kafka broker port, any client within this VPC"
 
   cidr_ipv4   = var.vpc_cidr
-  from_port   = 9098
-  to_port     = 9098
+  from_port   = 9092
+  to_port     = 9092
   ip_protocol = "tcp"
 }
 
-resource "aws_vpc_security_group_egress_rule" "msk_all" {
-  security_group_id = aws_security_group.msk.id
-  description       = "Allow all outbound (broker-to-broker, AWS API calls)"
+resource "aws_vpc_security_group_egress_rule" "kafka_all" {
+  security_group_id = aws_security_group.kafka.id
+  description       = "Allow all outbound"
 
   cidr_ipv4   = "0.0.0.0/0"
   ip_protocol = "-1"
 }
 
-resource "aws_msk_serverless_cluster" "this" {
-  cluster_name = "${var.project}-${var.environment}-kafka"
+resource "aws_iam_role" "kafka" {
+  name = "${var.project}-${var.environment}-kafka-ec2-role"
 
-  client_authentication {
-    sasl {
-      iam {
-        enabled = true
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect    = "Allow"
+        Principal = { Service = "ec2.amazonaws.com" }
+        Action    = "sts:AssumeRole"
       }
-    }
-  }
-
-  vpc_config {
-    subnet_ids         = var.private_subnets
-    security_group_ids = [aws_security_group.msk.id]
-  }
+    ]
+  })
 
   tags = {
-    Project     = var.project
-    Environment = var.environment
-    Service     = "platform"
+    ManagedBy = "terraform"
   }
 }
 
-# Policy JSON for producer/consumer clients (rentifyx-identity-api,
-# rentifyx-communications-api) to attach to their own EC2 instance IAM
-# roles in their own repos - this module doesn't attach it to anything
-# itself, since it doesn't own those services' roles.
-data "aws_iam_policy_document" "kafka_client" {
-  statement {
-    sid    = "MSKConnect"
-    effect = "Allow"
-    actions = [
-      "kafka-cluster:Connect",
-      "kafka-cluster:AlterCluster",
-      "kafka-cluster:DescribeCluster",
-    ]
-    resources = [aws_msk_serverless_cluster.this.arn]
+resource "aws_iam_role_policy_attachment" "kafka_ssm" {
+  role       = aws_iam_role.kafka.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+resource "aws_iam_instance_profile" "kafka" {
+  name = "${var.project}-${var.environment}-kafka-ec2-profile"
+  role = aws_iam_role.kafka.name
+}
+
+data "aws_ami" "amazon_linux_2023" {
+  most_recent = true
+  owners      = ["amazon"]
+
+  filter {
+    name   = "name"
+    values = ["al2023-ami-*-x86_64"]
   }
 
-  # Resource ARN shape follows AWS's own documented examples exactly
-  # (arn:...:topic/<cluster-name>/<cluster-uuid>/<topic-name>,
-  # arn:...:group/<cluster-name>/<cluster-uuid>/<group-name>) - a wildcard
-  # in the UUID's own path segment, not a single trailing "*" spanning
-  # everything after the cluster name. The previous 2-segment form
-  # (".../${cluster_name}/*") worked for topic actions in practice but
-  # caused "Access Denied" specifically on kafka-cluster:DescribeGroup/
-  # AlterGroup during the 2026-07-20 session - root cause not confirmed,
-  # but this 3-segment form matches AWS's documented shape precisely and
-  # is the safer pattern going forward.
-  statement {
-    sid    = "MSKTopicReadWrite"
-    effect = "Allow"
-    actions = [
-      "kafka-cluster:*Topic*",
-      "kafka-cluster:WriteData",
-      "kafka-cluster:ReadData",
-    ]
-    resources = ["arn:aws:kafka:${var.aws_region}:*:topic/${aws_msk_serverless_cluster.this.cluster_name}/*/*"]
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+}
+
+resource "aws_instance" "kafka" {
+  ami                    = data.aws_ami.amazon_linux_2023.id
+  instance_type          = "t3.micro"
+  iam_instance_profile   = aws_iam_instance_profile.kafka.name
+  vpc_security_group_ids = [aws_security_group.kafka.id]
+  subnet_id              = var.private_subnets[0]
+
+  user_data = base64encode(templatefile("${path.module}/userdata.sh.tpl", {}))
+
+  root_block_device {
+    volume_size = 20
+    volume_type = "gp3"
+    encrypted   = true
   }
 
-  statement {
-    sid    = "MSKGroup"
-    effect = "Allow"
-    actions = [
-      "kafka-cluster:AlterGroup",
-      "kafka-cluster:DescribeGroup",
-    ]
-    resources = ["arn:aws:kafka:${var.aws_region}:*:group/${aws_msk_serverless_cluster.this.cluster_name}/*/*"]
+  tags = {
+    Name        = "${var.project}-${var.environment}-kafka-broker"
+    Environment = var.environment
+    ManagedBy   = "terraform"
+  }
+
+  # data.aws_ami's most_recent lookup re-resolves to a newer AMI ID every time
+  # AWS publishes a patched al2023 image, which would otherwise force a
+  # replace on every plan. AMI updates should be a deliberate redeploy, not
+  # accidental churn from an unrelated apply - same fix already applied to
+  # both app repos' modules/ec2.
+  lifecycle {
+    ignore_changes = [ami]
   }
 }
