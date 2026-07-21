@@ -104,6 +104,16 @@ data "aws_iam_policy_document" "kafka_client" {
     resources = [aws_msk_serverless_cluster.this.arn]
   }
 
+  # Resource ARN shape follows AWS's own documented examples exactly
+  # (arn:...:topic/<cluster-name>/<cluster-uuid>/<topic-name>,
+  # arn:...:group/<cluster-name>/<cluster-uuid>/<group-name>) - a wildcard
+  # in the UUID's own path segment, not a single trailing "*" spanning
+  # everything after the cluster name. The previous 2-segment form
+  # (".../${cluster_name}/*") worked for topic actions in practice but
+  # caused "Access Denied" specifically on kafka-cluster:DescribeGroup/
+  # AlterGroup during the 2026-07-20 session - root cause not confirmed,
+  # but this 3-segment form matches AWS's documented shape precisely and
+  # is the safer pattern going forward.
   statement {
     sid    = "MSKTopicReadWrite"
     effect = "Allow"
@@ -112,7 +122,7 @@ data "aws_iam_policy_document" "kafka_client" {
       "kafka-cluster:WriteData",
       "kafka-cluster:ReadData",
     ]
-    resources = ["arn:aws:kafka:${var.aws_region}:*:topic/${aws_msk_serverless_cluster.this.cluster_name}/*"]
+    resources = ["arn:aws:kafka:${var.aws_region}:*:topic/${aws_msk_serverless_cluster.this.cluster_name}/*/*"]
   }
 
   statement {
@@ -122,6 +132,6 @@ data "aws_iam_policy_document" "kafka_client" {
       "kafka-cluster:AlterGroup",
       "kafka-cluster:DescribeGroup",
     ]
-    resources = ["arn:aws:kafka:${var.aws_region}:*:group/${aws_msk_serverless_cluster.this.cluster_name}/*"]
+    resources = ["arn:aws:kafka:${var.aws_region}:*:group/${aws_msk_serverless_cluster.this.cluster_name}/*/*"]
   }
 }

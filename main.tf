@@ -36,12 +36,6 @@ module "kafka" {
   vpc_cidr        = module.network.vpc_cidr
 }
 
-module "kafka_topics" {
-  source = "./modules/kafka-topics"
-
-  depends_on = [module.kafka]
-}
-
 module "api_gateway" {
   source = "./modules/api-gateway"
 
