@@ -41,19 +41,26 @@ flowchart TB
         MSK["module.kafka —<br/>self-hosted KRaft broker<br/>(EC2, PLAINTEXT)"]
         OIDC["module.github_actions_oidc —<br/>shared OIDC provider<br/>+ CI role"]
         Cognito["module.cognito"]
-        APIGW["module.api_gateway"]
+        APIGW["module.api_gateway —<br/>HTTP API, pass-through routing"]
         Obs["module.observability —<br/>CloudWatch log group"]
 
         VPC --> MSK
     end
 
+    Client["External client"]
     IdentityAPI["rentifyx-identity-api<br/>(own EC2, own IAM role)"]
     CommsAPI["rentifyx-communications-api<br/>(own EC2, own IAM role)"]
 
+    Client -->|"ANY /identity/{proxy+}"| APIGW
+    Client -->|"ANY /communications/{proxy+}"| APIGW
+    APIGW -->|"HTTP_PROXY, public EC2 DNS:8080<br/>(no VPC Link/NLB yet)"| IdentityAPI
+    APIGW -->|"HTTP_PROXY, public EC2 DNS:8080"| CommsAPI
     IdentityAPI -->|"publishes<br/>NotificationRequested"| MSK
     MSK -->|"consumes"| CommsAPI
     IdentityAPI -.->|"terraform_remote_state<br/>reads kafka_ssm_parameter_path"| MSK
     CommsAPI -.->|"terraform_remote_state<br/>reads kafka_ssm_parameter_path"| MSK
+    APIGW -.->|"terraform_remote_state<br/>reads ec2_public_dns"| IdentityAPI
+    APIGW -.->|"terraform_remote_state<br/>reads ec2_public_dns"| CommsAPI
     CI -->|"assumes"| OIDC
 ```
 
@@ -62,6 +69,29 @@ resolve the broker's bootstrap address via `terraform_remote_state` without this
 needing to know their IAM role names. See
 [`.specs/features/self-hosted-kafka/`](.specs/features/self-hosted-kafka/) for why MSK
 Serverless (SASL/IAM) was replaced with a self-hosted broker (PLAINTEXT) on 2026-07-21 — cost.
+
+## API Gateway
+
+`module.api_gateway` provisions a single AWS API Gateway v2 HTTP API in front of the RentifyX
+microservices, so external clients hit one URL instead of each service's own EC2 public DNS
+directly. It is **pass-through only** — the gateway does not validate JWTs or API keys, it just
+routes by path prefix. Each backend service keeps enforcing its own auth exactly as it does today
+(`identity-api` = JWT, `communications-api` = API key). Centralizing auth at the gateway was
+deferred because `identity-api` doesn't expose a JWKS endpoint yet (it only holds an RS256 PEM key
+in Secrets Manager) — a native API Gateway JWT authorizer needs one.
+
+| Route | Target | Status |
+|---|---|---|
+| `ANY /identity/{proxy+}` | `rentifyx-identity-api` EC2 instance, port 8080 | wired, dormant until that repo's `enable_ec2` is actually applied |
+| `ANY /communications/{proxy+}` | `rentifyx-communications-api` EC2 instance, port 8080 | wired, dormant until that repo's `enable_ec2` is actually applied |
+| `ANY /assets/{proxy+}` | `rentifyx-asset-registry-api` | **not created** (`count = 0`) — that repo has no deploy/IaC yet |
+
+Integrations use `HTTP_PROXY` straight to each service's public EC2 DNS — no VPC Link/NLB. Both
+services run as a single public-subnet EC2 instance today (no load balancer), so a private VPC
+Link would need a new NLB + target group per service before it could work; revisit once either
+service moves behind a real load balancer. The root module reads each service's `ec2_public_dns`
+via `terraform_remote_state` (same cross-repo pattern as the Kafka SSM path), wrapped in `try()`
+since that output is `null` until the target repo's EC2 module is actually applied.
 
 ## Decisions
 
@@ -85,7 +115,7 @@ modules/
   network/              — VPC, subnets, NAT Gateway, flow logs, default SG lockdown
   kafka/                — self-hosted Kafka broker (EC2, KRaft), security group, SSM parameter
   github-actions-oidc/  — shared GitHub Actions OIDC provider + CI role
-  api-gateway/           — HTTP API Gateway (not yet wired to a backend)
+  api-gateway/           — HTTP API Gateway, pass-through routing to identity-api/communications-api
   cognito/               — Cognito User Pool (not yet consumed by either service)
   observability/         — CloudWatch log group for OTel export
 docs/
@@ -102,6 +132,13 @@ bulk of this repo (`network`/`kafka`/`api-gateway`/`cognito`/`observability`) �
 resources (NAT Gateway, Kafka broker EC2), applied only with explicit confirmation. The one thing
 actually applied for real: `module.github_actions_oidc` (the CI role both this repo's own workflow
 and eventually the service repos' deploy workflows assume).
+
+Even once this repo is applied, `identity-api`'s and `communications-api`'s API Gateway routes stay
+dormant (no integration created, `count = 0`) until *those* repos' own `terraform apply` actually
+provisions their EC2 instance — the gateway reads `ec2_public_dns` from their state via
+`terraform_remote_state`, and that output doesn't exist before their first real apply. Apply order
+matters here: this repo first (so `ses_identity_arn` and the GitHub OIDC provider exist — both
+service repos depend on them), then `identity-api`, then `communications-api`.
 
 See [`.specs/project/STATE.md`](.specs/project/STATE.md) for the up-to-date, detailed state —
 this README describes what the system *is*, STATE.md tracks what's actually been *done*.
