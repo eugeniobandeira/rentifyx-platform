@@ -27,3 +27,20 @@ output "public_subnets" {
   value       = module.network.public_subnets
   description = "Public subnet IDs - app repos' EC2 instances go here (internet-facing, same VPC as the Kafka broker)."
 }
+
+# Confirmed the hard way against real AWS 2026-07-24: a VPC-attached Lambda
+# placed in a public subnet gets ZERO internet egress - Lambda ENIs never
+# get a public IP regardless of the subnet's IGW route, so every AWS public
+# API call (DynamoDB, Rekognition, SQS, Bedrock) timed out, while the
+# same-VPC Kafka broker (private IP) was at least reachable. Private
+# subnets route through the NAT gateway module.network already creates -
+# app repos' Lambdas belong here, not in public_subnets.
+output "private_subnets" {
+  value       = module.network.private_subnets
+  description = "Private subnet IDs (NAT egress) - VPC-attached Lambdas in app repos go here, not public_subnets, since Lambda ENIs never get a public IP."
+}
+
+output "api_gateway_endpoint" {
+  value       = module.api_gateway.api_endpoint
+  description = "Public invoke URL for the shared HTTP API Gateway. Routes: /identity/{proxy+}, /communications/{proxy+} (asset-registry-api pending deploy)."
+}

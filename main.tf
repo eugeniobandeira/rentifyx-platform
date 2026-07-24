@@ -37,14 +37,47 @@ module "kafka" {
   vpc_cidr        = module.network.vpc_cidr
 }
 
+# Cross-repo, read-only: identity-api and communications-api each own their
+# EC2 instance in their own Terraform state (this platform repo doesn't
+# provision either). try() because ec2_public_dns is null whenever that
+# repo's enable_ec2 = false, or the key doesn't exist yet if that repo has
+# never been applied - same pattern identity-api itself uses to read this
+# repo's outputs (see its main.tf kafka_ssm_parameter_path).
+data "terraform_remote_state" "identity_api" {
+  backend = "s3"
+
+  config = {
+    bucket = "rentifyx-tfstate-166613156216"
+    key    = "identity-api/terraform.tfstate"
+    region = "us-east-1"
+  }
+}
+
+data "terraform_remote_state" "communications_api" {
+  backend = "s3"
+
+  config = {
+    bucket = "rentifyx-tfstate-166613156216"
+    key    = "communications-api/terraform.tfstate"
+    region = "us-east-1"
+  }
+}
+
+locals {
+  identity_api_dns       = try(data.terraform_remote_state.identity_api.outputs.ec2_public_dns, null)
+  communications_api_dns = try(data.terraform_remote_state.communications_api.outputs.ec2_public_dns, null)
+}
+
 module "api_gateway" {
   source = "./modules/api-gateway"
 
-  project     = var.project
-  environment = var.environment
-  aws_region  = var.aws_region
-  vpc_id      = module.network.vpc_id
-  subnet_ids  = module.network.private_subnets
+  project                = var.project
+  environment            = var.environment
+  aws_region             = var.aws_region
+  vpc_id                 = module.network.vpc_id
+  subnet_ids             = module.network.private_subnets
+  identity_api_uri       = local.identity_api_dns != null ? "http://${local.identity_api_dns}:8080" : ""
+  communications_api_uri = local.communications_api_dns != null ? "http://${local.communications_api_dns}:8080" : ""
 }
 
 module "cognito" {
