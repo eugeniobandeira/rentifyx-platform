@@ -105,7 +105,10 @@ resource "aws_instance" "kafka" {
   user_data = base64encode(templatefile("${path.module}/userdata.sh.tpl", {}))
 
   root_block_device {
-    volume_size = 20
+    # AL2023 AMI's backing snapshot requires >= 30GB - 20GB failed
+    # RunInstances with InvalidBlockDeviceMapping (confirmed against real
+    # AWS, 2026-07-24).
+    volume_size = 30
     volume_type = "gp3"
     encrypted   = true
   }
