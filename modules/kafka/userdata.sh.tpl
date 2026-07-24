@@ -20,9 +20,17 @@ LOCAL_IP=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/
 # Zookeeper) using Apache's official image. Single node, single broker -
 # accepted trade-off documented in .specs/features/self-hosted-kafka/spec.md.
 # PLAINTEXT only: the security group (VPC-CIDR-scoped) is the trust boundary.
+# Explicit heap cap - confirmed the hard way 2026-07-24 that the JVM's
+# default heap sizing on a t3.micro (1GiB) left no headroom for the OS,
+# Docker daemon, or SSM Agent, causing OOM-driven instability (SSM Agent
+# lost connection at boot and never recovered, broker itself only
+# intermittently reachable). Even on the now-larger t3.small (2GiB), cap it
+# explicitly rather than trust the image's default - a single-node
+# dev/test broker has no need for a large heap.
 docker run -d \
   --name kafka-broker \
   --restart unless-stopped \
+  --memory=1g \
   -p 9092:9092 \
   -e KAFKA_NODE_ID=1 \
   -e KAFKA_PROCESS_ROLES=broker,controller \
@@ -32,4 +40,5 @@ docker run -d \
   -e KAFKA_CONTROLLER_QUORUM_VOTERS=1@localhost:9093 \
   -e KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT \
   -e KAFKA_AUTO_CREATE_TOPICS_ENABLE=true \
+  -e KAFKA_HEAP_OPTS="-Xmx512m -Xms512m" \
   apache/kafka:latest

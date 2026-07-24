@@ -96,8 +96,16 @@ data "aws_ami" "amazon_linux_2023" {
 }
 
 resource "aws_instance" "kafka" {
-  ami                    = data.aws_ami.amazon_linux_2023.id
-  instance_type          = "t3.micro"
+  ami = data.aws_ami.amazon_linux_2023.id
+  # t3.micro (1GiB RAM) was undersized for Docker + a JVM Kafka broker with
+  # no heap cap - confirmed the hard way against real AWS 2026-07-24: the
+  # instance's own SSM Agent lost connection at boot and never recovered
+  # (classic OOM-killer symptom), and the broker itself was reachable only
+  # intermittently (one Lambda invocation succeeded, every other connection
+  # - including the Kafka event source mapping's own poller - timed out).
+  # t3.small (2GiB) plus an explicit heap cap in userdata.sh.tpl leaves
+  # headroom for the OS/Docker/SSM Agent alongside the JVM.
+  instance_type          = "t3.small"
   iam_instance_profile   = aws_iam_instance_profile.kafka.name
   vpc_security_group_ids = [aws_security_group.kafka.id]
   subnet_id              = var.private_subnets[0]
