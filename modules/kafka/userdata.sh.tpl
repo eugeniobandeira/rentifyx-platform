@@ -35,6 +35,13 @@ LOCAL_IP=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/
 # intermittently reachable). Even on the now-larger t3.small (2GiB), cap it
 # explicitly rather than trust the image's default - a single-node
 # dev/test broker has no need for a large heap.
+# offsets/transaction replication factor pinned to 1 - confirmed 2026-07-25
+# via a real deploy that Kafka's defaults (3) block __consumer_offsets from
+# ever being created on a single-node broker ("Unable to replicate the
+# partition 3 time(s)... only 1 broker(s) are registered"), which in turn
+# means no consumer group can ever form (FindCoordinator never resolves) -
+# every consumer silently never receives a single message, with no error on
+# either the producer or consumer side.
 docker run -d \
   --name kafka-broker \
   --restart unless-stopped \
@@ -49,4 +56,7 @@ docker run -d \
   -e KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT \
   -e KAFKA_AUTO_CREATE_TOPICS_ENABLE=true \
   -e KAFKA_HEAP_OPTS="-Xmx512m -Xms512m" \
+  -e KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1 \
+  -e KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1 \
+  -e KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1 \
   apache/kafka:latest
