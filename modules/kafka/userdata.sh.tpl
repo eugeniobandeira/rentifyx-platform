@@ -5,6 +5,14 @@ set -euo pipefail
 dnf install -y docker
 systemctl enable --now docker
 
+# Explicitly install and start the SSM Agent - confirmed 2026-07-25 via a real
+# EC2 console log (no OOM this time, userdata completed cleanly in ~160s) that
+# this AL2023 AMI resolution simply does not ship the agent pre-installed,
+# despite AWS's own docs describing AL2023 as including it by default. Do not
+# assume it's present; install and enable it unconditionally.
+dnf install -y amazon-ssm-agent
+systemctl enable --now amazon-ssm-agent
+
 # Resolve this instance's own private IP at boot time via the EC2 instance
 # metadata endpoint. Terraform can't template this value in (user_data can't
 # self-reference the instance it belongs to before that instance exists), and
