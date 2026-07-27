@@ -26,6 +26,8 @@ philosophy was tested and, in one case, reversed.
 
 For the full cross-repo picture (all RentifyX services, not just this repo's infra), see [`docs/system-architecture.md`](docs/system-architecture.md) (or `.html` for a rendered view). Below is this repo's own infra-only diagram.
 
+Deploying all 5 repos for real? Read [`docs/deploy-runbook.md`](docs/deploy-runbook.md) first — every real bug hit doing a full-stack deploy (credential/region/path gotchas, IaC wiring gaps, S3 fan-out limits, runtime config mismatches) and its exact fix, so the next deploy doesn't rediscover any of it.
+
 ```mermaid
 flowchart TB
     subgraph GH["GitHub Actions"]
