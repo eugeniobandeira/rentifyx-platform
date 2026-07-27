@@ -102,13 +102,14 @@ graph TB
 - Own idempotency DynamoDB tables (one per Lambda) and its own S3 media bucket (provisioned in that repo, not platform — domain-specific infra decision, 2026-07-24).
 
 ### rentityx-frontend
-- Angular 22 SPA (SSR via `@angular/ssr` + Express). Identity feature implemented: auth, session, LGPD data export/delete.
-- No AWS infra of its own. Talks directly to identity-api's EC2 public DNS today (`{host}/api/v1`, Bearer JWT + refresh cookie) — **not yet routed through** this repo's API Gateway, despite that gateway already having an `/identity/*` route.
+- Angular 22 SPA (SSR via `@angular/ssr` + Express). Identity feature (auth, session, LGPD) and asset-registry integration (browse/detail/create/admin flows) implemented.
+- **Deployed to AWS 2026-07-27**: own EC2 instance (`t2.micro`) running the SSR container, image in its own ECR repo, IAM/SG/VPC-attach via `terraform_remote_state` on this repo (same pattern every app repo uses) — no CloudFront/domain/HTTPS yet, plain HTTP on the instance's public IP. Full detail in that repo's `.specs/project/STATE.md`.
+- Talks directly to identity-api's and asset-registry-api's EC2 public DNS today (`{host}/api/v1`, Bearer JWT + refresh cookie) — **not yet routed through** this repo's API Gateway, despite that gateway already having an `/identity/*` route.
 - Deliberately does **not** integrate with communications-api (its API-key auth scheme is unsuitable for a browser SPA) or talk to Kafka directly.
 
 ## Open gaps (as of 2026-07-24)
 
 - `rentifyx-asset-registry-api` has no deploy/IaC — its Kafka consumers for `AssetMediaModerated`/`AssetEnrichmentSuggested` and its API Gateway route don't exist in AWS yet.
-- Frontend bypasses the API Gateway, hitting identity-api's EC2 directly.
+- Frontend bypasses the API Gateway, hitting identity-api's and asset-registry-api's EC2 hosts directly.
 - Cognito (provisioned here) isn't consumed by any service yet — identity-api's own auth flow doesn't currently integrate with it (worth confirming if this is intentional or drift).
 - `rentifyx-ai-services`' Kafka event source mapping (Enrichment) was blocked by Kafka broker instability during its first real deploy (OOM on a `t3.micro` broker) — fixed in code (`t3.small` + capped JVM heap) but not yet re-verified against real AWS.
