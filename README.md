@@ -24,6 +24,8 @@ philosophy was tested and, in one case, reversed.
 
 ## Architecture
 
+For the full cross-repo picture (all RentifyX services, not just this repo's infra), see [`docs/system-architecture.md`](docs/system-architecture.md) (or `.html` for a rendered view). Below is this repo's own infra-only diagram.
+
 ```mermaid
 flowchart TB
     subgraph GH["GitHub Actions"]

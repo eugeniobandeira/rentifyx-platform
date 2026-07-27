@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RentifyX System Architecture</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #ffffff;
+    --fg: #1e1e1e;
+    --muted: #575757;
+    --border: #d8d8d8;
+    --code-bg: #f3f3f3;
+    --th-bg: #f0f0f0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1a1a1e;
+      --fg: #e5e5e5;
+      --muted: #a0a0a0;
+      --border: #3a3a3e;
+      --code-bg: #26262b;
+      --th-bg: #232328;
+    }
+  }
+  html, body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    line-height: 1.55;
+    margin: 0;
+  }
+  main {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 40px 24px 80px;
+  }
+  h1 { font-size: 1.9rem; margin-bottom: 4px; }
+  h2 { font-size: 1.35rem; margin-top: 2.5rem; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+  h3 { font-size: 1.1rem; margin-top: 1.8rem; }
+  p.lede { color: var(--muted); margin-top: 0; }
+  code {
+    background: var(--code-bg);
+    padding: 0.1em 0.4em;
+    border-radius: 4px;
+    font-size: 0.92em;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1rem 0;
+    font-size: 0.95rem;
+  }
+  th, td {
+    text-align: left;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+  }
+  th { background: var(--th-bg); }
+  ul { padding-left: 1.3rem; }
+  li { margin-bottom: 4px; }
+  .diagram-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    margin: 1rem 0;
+  }
+  .mermaid { display: flex; justify-content: center; }
+</style>
+</head>
+<body>
+<main>
+
+<h1>RentifyX System Architecture</h1>
+<p class="lede">Cross-repo view: services, shared infra, and event flow. Compiled from each repo's <code>CLAUDE.md</code>/<code>README.md</code>/<code>.specs/codebase/ARCHITECTURE.md</code> and this repo's root <code>main.tf</code>/<code>outputs.tf</code>. Canonical home for this doc is <code>rentifyx-platform</code> since it's cross-cutting, shared infra documentation, not specific to one service.</p>
+
+<h2>Diagram</h2>
+<div class="diagram-wrap">
+<pre class="mermaid">
+graph TB
+    subgraph Client
+        FE["Frontend<br/>Angular SPA, SSR"]
+    end
+
+    APIGW["API Gateway<br/>rentifyx-platform<br/>routes: /identity/*, /communications/*<br/>(/assets/* not created yet)"]
+
+    subgraph VPC["VPC — rentifyx-platform (shared network + Kafka)"]
+        NAT["NAT Gateway<br/>(public subnet)"]
+
+        subgraph Private["private subnet"]
+            IDENTITY["identity-api<br/>(EC2)"]
+            COMMS["communications-api<br/>(EC2)"]
+            KAFKA["Kafka Broker<br/>(EC2, KRaft, PLAINTEXT)"]
+
+            subgraph AI["rentifyx-ai-services"]
+                MOD["Moderation Lambda<br/>(S3-triggered)"]
+                ENR["Enrichment Lambda<br/>(Kafka event source mapping)"]
+                DEDUPE["Dedupe Lambda<br/>(placeholder, DEF-AI-001)"]
+            end
+        end
+
+        ASSETREG["asset-registry-api<br/>(target EKS/Fargate — no IaC yet)"]
+    end
+
+    S3["S3<br/>Media Bucket"]
+    REKOG["Rekognition"]
+    BEDROCK["Bedrock<br/>Claude Sonnet 5"]
+    COGNITO["Cognito"]
+    SES["SES"]
+    DYNAMO["DynamoDB<br/>per-service tables:<br/>identity, comms, assets, ai-services x2"]
+
+    FE -.->|"intended path"| APIGW
+    FE -->|"current: direct EC2 public DNS"| IDENTITY
+    APIGW -->|"/identity/*"| IDENTITY
+    APIGW -->|"/communications/*"| COMMS
+
+    IDENTITY -->|"produces NotificationRequested,<br/>user-lifecycle-events"| KAFKA
+    KAFKA -->|"consumes"| COMMS
+    KAFKA <-->|"AssetCreated in /<br/>AssetMediaModerated,<br/>AssetEnrichmentSuggested out"| AI
+    KAFKA -.->|"Kafka events (planned)"| ASSETREG
+
+    MOD -->|"GetObject"| S3
+    MOD -->|"DetectModerationLabels"| REKOG
+    ENR -->|"Converse API"| BEDROCK
+    IDENTITY -->|"auth"| COGNITO
+    COMMS -->|"send email"| SES
+    IDENTITY -.-> DYNAMO
+    COMMS -.-> DYNAMO
+    ASSETREG -.-> DYNAMO
+    AI -.-> DYNAMO
+</pre>
+</div>
+
+<h2>Kafka topics (event contracts)</h2>
+<table>
+<thead><tr><th>Topic</th><th>Producer</th><th>Consumer(s)</th></tr></thead>
+<tbody>
+<tr><td><code>AssetCreated</code></td><td>asset-registry-api</td><td>rentifyx-ai-services (Moderation, S3-triggered off the referenced object)</td></tr>
+<tr><td><code>AssetMediaModerated</code> (v2), <code>AssetPendingManualReview</code></td><td>rentifyx-ai-services (Moderation)</td><td>asset-registry-api</td></tr>
+<tr><td><code>AssetEnrichmentSuggested</code></td><td>rentifyx-ai-services (Enrichment)</td><td>asset-registry-api</td></tr>
+<tr><td><code>NotificationRequested</code> (+ retry/DLQ)</td><td>identity-api</td><td>communications-api</td></tr>
+<tr><td><code>user-lifecycle-events</code> (<code>UserAccountDeleted</code>, <code>UserSuspended</code>)</td><td>identity-api</td><td>communications-api, asset-registry-api</td></tr>
+</tbody>
+</table>
+
+<h2>Services</h2>
+
+<h3>rentifyx-platform (shared infra, no service logic of its own)</h3>
+<ul>
+<li><strong>Network</strong>: VPC, 2 public + 2 private subnets, 1 shared NAT Gateway, KMS-encrypted VPC Flow Logs &rarr; CloudWatch.</li>
+<li><strong>Kafka</strong>: single EC2 KRaft broker, PLAINTEXT, SG scoped to VPC CIDR. Bootstrap address published via SSM parameter (<code>kafka_ssm_parameter_path</code> output).</li>
+<li><strong>API Gateway</strong>: HTTP API v2, pass-through routing to identity-api/communications-api EC2 instances by public DNS (read via <code>terraform_remote_state</code> from those repos). No VPC Link.</li>
+<li>Also provisions Cognito (not yet consumed), a shared SES sender identity, GitHub Actions OIDC, and a CloudWatch observability log group.</li>
+<li><strong>Lesson learned the hard way</strong> (rentifyx-ai-services' first live deploy, 2026-07-24): a Lambda ENI never gets a public IP regardless of the subnet's IGW route &mdash; anything needing AWS API egress (DynamoDB, Rekognition, SQS, Bedrock) must sit in <code>private_subnets</code> (NAT egress), not <code>public_subnets</code>.</li>
+</ul>
+
+<h3>rentifyx-identity-api</h3>
+<ul>
+<li>Auth/identity microservice: register, login, refresh, logout, password reset, LGPD data export/erasure/consent.</li>
+<li>Compute: own EC2 instance, own IAM role, deployed via Terraform + GitHub Actions OIDC.</li>
+<li>Owns: DynamoDB, Cognito, SES, Secrets Manager, KMS &mdash; real AWS even in local dev (no LocalStack).</li>
+<li>Exposes REST under <code>/api/v1</code> (JWT RS256, refresh via httpOnly cookie). Publishes <code>NotificationRequested</code> and <code>user-lifecycle-events</code>.</li>
+</ul>
+
+<h3>rentifyx-communications-api</h3>
+<ul>
+<li>Channel-agnostic notification dispatch (v1 = email via SES). Kafka-triggered only &mdash; no HTTP endpoint to <em>request</em> a send.</li>
+<li>Compute: own EC2 instance, same pattern as identity-api.</li>
+<li>Consumes <code>NotificationRequested</code> (+ retry/DLQ) from identity-api.</li>
+<li>Exposes 4 backend-only HTTP endpoints (notification lookup, consent get/put) gated by a static <code>X-Api-Key</code> &mdash; not meant for browser/frontend use.</li>
+</ul>
+
+<h3>rentifyx-asset-registry-api</h3>
+<ul>
+<li>Asset catalog: creation, categorization, presigned-S3 media uploads, search, moderation state.</li>
+<li>Target compute is EKS/Fargate per its own <code>CLAUDE.md</code>, but <strong>no deploy/IaC exists yet</strong> &mdash; this repo's <code>/assets</code> API Gateway route is <code>count = 0</code>.</li>
+<li>Owns: DynamoDB (single-table), S3 (media), Secrets Manager, KMS.</li>
+<li>Publishes <code>AssetCreated</code>/<code>AssetMediaUploaded</code>/<code>AssetPublished</code>/<code>AssetSuspended</code> via an outbox-poll pattern. Consumes <code>user-lifecycle-events</code> (identity-api) and <code>AssetMediaModerated</code>/<code>AssetEnrichmentSuggested</code> (rentifyx-ai-services). JWT validated against identity-api's public key (RS256) &mdash; no shared secret between services.</li>
+</ul>
+
+<h3>rentifyx-ai-services</h3>
+<ul>
+<li>Three Lambdas: <strong>Moderation</strong> (S3 ObjectCreated-triggered, calls Rekognition <code>DetectModerationLabels</code>), <strong>Enrichment</strong> (Kafka event-source-mapping-triggered, calls Bedrock Converse API), <strong>Dedupe</strong> (placeholder scaffold, <code>DEF-AI-001</code>, not implemented).</li>
+<li>Event-only &mdash; never exposes synchronous HTTP endpoints.</li>
+<li>Consumes <code>AssetCreated</code> (indirectly, via the S3 object it references); publishes <code>AssetMediaModerated</code>/<code>AssetPendingManualReview</code>/<code>AssetEnrichmentSuggested</code> back to asset-registry-api.</li>
+<li>Own idempotency DynamoDB tables (one per Lambda) and its own S3 media bucket (provisioned in that repo, not platform &mdash; domain-specific infra decision, 2026-07-24).</li>
+</ul>
+
+<h3>rentityx-frontend</h3>
+<ul>
+<li>Angular 22 SPA (SSR via <code>@angular/ssr</code> + Express). Identity feature implemented: auth, session, LGPD data export/delete.</li>
+<li>No AWS infra of its own. Talks directly to identity-api's EC2 public DNS today (<code>{host}/api/v1</code>, Bearer JWT + refresh cookie) &mdash; <strong>not yet routed through</strong> this repo's API Gateway, despite that gateway already having an <code>/identity/*</code> route.</li>
+<li>Deliberately does <strong>not</strong> integrate with communications-api (its API-key auth scheme is unsuitable for a browser SPA) or talk to Kafka directly.</li>
+</ul>
+
+<h2>Open gaps (as of 2026-07-24)</h2>
+<ul>
+<li><code>rentifyx-asset-registry-api</code> has no deploy/IaC &mdash; its Kafka consumers for <code>AssetMediaModerated</code>/<code>AssetEnrichmentSuggested</code> and its API Gateway route don't exist in AWS yet.</li>
+<li>Frontend bypasses the API Gateway, hitting identity-api's EC2 directly.</li>
+<li>Cognito (provisioned here) isn't consumed by any service yet &mdash; identity-api's own auth flow doesn't currently integrate with it (worth confirming if this is intentional or drift).</li>
+<li><code>rentifyx-ai-services</code>' Kafka event source mapping (Enrichment) was blocked by Kafka broker instability during its first real deploy (OOM on a <code>t3.micro</code> broker) &mdash; fixed in code (<code>t3.small</code> + capped JVM heap) but not yet re-verified against real AWS.</li>
+</ul>
+
+</main>
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'default'
+  });
+</script>
+</body>
+</html>
