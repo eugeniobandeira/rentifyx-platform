@@ -63,9 +63,20 @@ data "terraform_remote_state" "communications_api" {
   }
 }
 
+data "terraform_remote_state" "asset_registry_api" {
+  backend = "s3"
+
+  config = {
+    bucket = "rentifyx-tfstate-166613156216"
+    key    = "asset-registry-api/terraform.tfstate"
+    region = "us-east-1"
+  }
+}
+
 locals {
   identity_api_dns       = try(data.terraform_remote_state.identity_api.outputs.ec2_public_dns, null)
   communications_api_dns = try(data.terraform_remote_state.communications_api.outputs.ec2_public_dns, null)
+  asset_registry_api_dns = try(data.terraform_remote_state.asset_registry_api.outputs.ec2_public_dns, null)
 }
 
 module "api_gateway" {
@@ -78,6 +89,7 @@ module "api_gateway" {
   subnet_ids             = module.network.private_subnets
   identity_api_uri       = local.identity_api_dns != null ? "http://${local.identity_api_dns}:8080" : ""
   communications_api_uri = local.communications_api_dns != null ? "http://${local.communications_api_dns}:8080" : ""
+  asset_registry_api_uri = local.asset_registry_api_dns != null ? "http://${local.asset_registry_api_dns}:8080" : ""
 }
 
 module "cognito" {
