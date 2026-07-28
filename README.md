@@ -192,6 +192,12 @@ terraform fmt -check → terraform init → terraform validate → tflint --call
 Authenticates via the OIDC role above (`AWS_DEPLOY_ROLE_ARN` repo secret) — no long-lived AWS
 credentials stored in GitHub.
 
+## Windows / Git Bash gotchas (deploying from this OS)
+
+- **MSYS path conversion silently mangles any argument starting with `/`** — `aws ssm get-parameter --name "/rentifyx/..."` or `aws logs delete-log-group --log-group-name "/aws/lambda/..."` get rewritten to a Windows path before AWS ever sees them, producing misleading errors (`ParameterNotFound` for a parameter that exists, `Invalid...` for a log group that exists). Prefix the command with `MSYS_NO_PATHCONV=1` whenever an argument starts with `/`.
+- A stale `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`/`AWS_SESSION_TOKEN` in the shell session silently overrides `--profile`/`AWS_PROFILE` (SDK credential-resolution order puts env vars first). Prefix real commands with `env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN AWS_PROFILE=rentifyx-admin AWS_SDK_LOAD_CONFIG=1` to guarantee the right credentials are used.
+- **After any `terraform destroy -target=...`, root outputs computed from the destroyed modules go stale in state** (they aren't recalculated by a targeted destroy) — a downstream repo's `terraform_remote_state` read will then see old, real-looking values (a VPC ID, subnet IDs) for infrastructure that no longer exists, producing confusing errors instead of an honest "doesn't exist" failure. Run `terraform apply -refresh-only -target=<same targets> -auto-approve` immediately after any targeted destroy to reconcile outputs to their real (null/empty) values.
+
 ## License
 
 MIT © eugeniobandeira
