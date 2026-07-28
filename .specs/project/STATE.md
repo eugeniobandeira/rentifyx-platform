@@ -1,5 +1,12 @@
 # Project State
 
+## Quick Status (read this first — everything below is historical detail/changelog)
+
+- **Infra**: nothing deployed right now — full teardown confirmed 2026-07-28 (twice, same day — see below). Zero EC2, zero non-default VPCs, zero ECR, zero DynamoDB, only the permanent `rentifyx-tfstate-166613156216` S3 bucket remains.
+- **Known Terraform gotcha, fixed procedurally, not in code**: `terraform destroy -target=...` leaves stale root outputs in state (not recalculated). Always follow a targeted destroy with `terraform apply -refresh-only -target=<same targets> -auto-approve` before trusting `terraform output` or a downstream repo's `terraform_remote_state` read.
+- **Don't trust prose claims of "live"/"destroyed" in this file at face value** — verify against the real AWS account before assuming either way; this file has gone stale mid-session more than once today alone.
+- Full history below, newest first.
+
 ## Last Updated
 
 2026-07-28
