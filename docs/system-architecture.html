@@ -191,15 +191,16 @@ graph TB
 
 <h3>rentityx-frontend</h3>
 <ul>
-<li>Angular 22 SPA (SSR via <code>@angular/ssr</code> + Express). Identity feature implemented: auth, session, LGPD data export/delete.</li>
-<li>No AWS infra of its own. Talks directly to identity-api's EC2 public DNS today (<code>{host}/api/v1</code>, Bearer JWT + refresh cookie) &mdash; <strong>not yet routed through</strong> this repo's API Gateway, despite that gateway already having an <code>/identity/*</code> route.</li>
+<li>Angular 22 SPA (SSR via <code>@angular/ssr</code> + Express). Identity feature (auth, session, LGPD) and asset-registry integration (browse/detail/create/admin flows) implemented.</li>
+<li><strong>Deployed to AWS 2026-07-27</strong>: own EC2 instance (<code>t2.micro</code>) running the SSR container, image in its own ECR repo, IAM/SG/VPC-attach via <code>terraform_remote_state</code> on this repo (same pattern every app repo uses) &mdash; no CloudFront/domain/HTTPS yet, plain HTTP on the instance's public IP. Full detail in that repo's <code>.specs/project/STATE.md</code>.</li>
+<li>Talks directly to identity-api's and asset-registry-api's EC2 public DNS today (<code>{host}/api/v1</code>, Bearer JWT + refresh cookie) &mdash; <strong>not yet routed through</strong> this repo's API Gateway, despite that gateway already having an <code>/identity/*</code> route.</li>
 <li>Deliberately does <strong>not</strong> integrate with communications-api (its API-key auth scheme is unsuitable for a browser SPA) or talk to Kafka directly.</li>
 </ul>
 
 <h2>Open gaps (as of 2026-07-24)</h2>
 <ul>
 <li><code>rentifyx-asset-registry-api</code> has no deploy/IaC &mdash; its Kafka consumers for <code>AssetMediaModerated</code>/<code>AssetEnrichmentSuggested</code> and its API Gateway route don't exist in AWS yet.</li>
-<li>Frontend bypasses the API Gateway, hitting identity-api's EC2 directly.</li>
+<li>Frontend bypasses the API Gateway, hitting identity-api's and asset-registry-api's EC2 hosts directly.</li>
 <li>Cognito (provisioned here) isn't consumed by any service yet &mdash; identity-api's own auth flow doesn't currently integrate with it (worth confirming if this is intentional or drift).</li>
 <li><code>rentifyx-ai-services</code>' Kafka event source mapping (Enrichment) was blocked by Kafka broker instability during its first real deploy (OOM on a <code>t3.micro</code> broker) &mdash; fixed in code (<code>t3.small</code> + capped JVM heap) but not yet re-verified against real AWS.</li>
 </ul>
